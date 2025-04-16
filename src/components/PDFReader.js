@@ -5,7 +5,7 @@
 
 'use client'
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Setting the worker
@@ -19,6 +19,7 @@ export default function PDFReader() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [pdfDoc, setPdfDoc] = useState(null)
+  const canvasRef = useRef(null);
 
   // --- Event Handler for File Change ---
   const handleFileChange = (event) => {
@@ -28,9 +29,14 @@ export default function PDFReader() {
 
     if (!file) return;
 
-    // Resetting State for New File
+    // Resetting state and canva for new file
     setSelectedFile(null);
     setFileName('');
+    setPdfDoc(null);
+    if (canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d');
+      ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    }
 
     // Setting New File's State
     setSelectedFile(file);
@@ -40,7 +46,7 @@ export default function PDFReader() {
 
   }
 
-  // --- Loading the PDF After Getting File Object ---
+  // --- Loading the PDF into Reader After Getting File Object ---
   useEffect(() => {
 
 
@@ -110,23 +116,58 @@ export default function PDFReader() {
 
     loadPDF();
 
-  }, [selectedFile])  // Only rerenders when users add/change file
+  }, [selectedFile]);  // Only rerenders when users add/change file
 
+  useEffect(()=> {
+    if (!pdfDoc || !canvasRef.current) return;
+
+    const renderPage = async (pageNum) => {
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({scale: 1.0});
+        const canvas = canvasRef.current;
+        const context = canvas.getContext('2d');
+
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        const renderContext = {
+          canvasContext: context,
+          viewport: viewport,
+        }
+        await page.render(renderContext).promise;
+        console.log(`Page ${pageNum} rendered`);
+
+      } catch (renderError){
+        console.error(`Error rendering page ${pageNum}`, renderError);
+        setError(`Failed to render page ${pageNum}: ${renderError.message}`);
+      }
+    };
+
+    renderPage(1);
+
+  }, [pdfDoc]);        // Only rerenders when the pdfDoc is loaded and available
 
   return (
     <div>
 
-        <h1>Select a PDF: </h1>
+      <h1>Select a PDF: </h1>
 
-        <input 
-          type='file'
-          accept='application/pdf'
-          onChange={handleFileChange}
-        />
+      <input 
+        type='file'
+        accept='application/pdf'
+        onChange={handleFileChange}
+      />
 
-        {fileName && <p>Selected file: {fileName}</p>}
-        <p>User uploaded: {fileName}</p>
-        <p>Number of pages: {numPages}</p>
+      {isLoading && <p>Loading PDF...</p>}
+      {error && <p style={{ color: 'red' }}>Error: {error}</p>}
+      {fileName && <p>Selected: {fileName}</p>}
+      {numPages > 0 && <p>Number of Pages: {numPages}</p>}
+
+      {/* Canvas Container */}
+      <div style={{ border: '1px solid black', marginTop: '20px', width: 'fit-content' }}>
+          <canvas ref={canvasRef}></canvas>
+      </div>
 
     </div>
     
